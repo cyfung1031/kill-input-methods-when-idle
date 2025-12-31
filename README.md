@@ -2,11 +2,40 @@
 
 ## Introduction
 
+macOS input methods aren’t just “a keyboard layout” — they’re a small ecosystem of **background agents and extensions** that keep running while you type, switch languages, show the input menu, and render candidate windows. On systems that use complex-script input (Chinese / Japanese / Korean, etc.), macOS relies on **InputMethodKit** components (for example, `imklaunchagent`) to host and coordinate those input method services.
+
+
 There is memory leakage in MacOS Input Methods.
 
 <img width="568" height="186" alt="Screenshot 2025-12-31 at 16 09 06" src="https://github.com/user-attachments/assets/00b85bed-603e-4d69-ab44-97ebf586ff7f" />
 
 So we need something to run periodicially to kill the Input Methods.
+
+### What goes wrong
+
+Multiple long-running reports describe macOS input-related processes (commonly `TextInputMenuAgent`, sometimes alongside other helpers) becoming unhealthy over time:
+
+- **High CPU / “Not Responding”** behavior that makes the whole Mac feel stuck, causes heat, loud fans, and fast battery drain.
+- **Typing / candidate selection lag** that gets worse after keeping the input method active for days, especially with Chinese input sources. Several community writeups attribute this to input-method state/caches accumulating and not being released cleanly.
+- Some people observe that **force-quitting the affected input processes immediately relieves the lag**, and the system respawns them automatically.
+
+In other words: even if Activity Monitor doesn’t obviously show “memory full”, the input method subsystem can still degrade (stutters, UI stalls, candidate window delays), and **restarting the IME-related helpers is a reliable “reset”** that restores responsiveness.
+
+### Why this project exists
+
+Manually opening Activity Monitor and force-quitting IME processes works — but it’s annoying, easy to forget, and disruptive if you kill them while actively typing.
+
+This repo provides a small script + LaunchAgent that:
+
+- **detects idleness** (via `HIDIdleTime`), and only acts when you’re away from the keyboard
+- **kills IME-related helper processes** (matched by a configurable regex under `/Input Methods/.../(Extensions|Plugins)`), so macOS respawns them cleanly
+- helps prevent “multi-day uptime” IME slowdown from building up again
+
+### Notes and safety
+
+- This is a **workaround**, not a permanent fix: the underlying bug/behavior may be in macOS or a specific input method / extension.
+- Killing these processes is generally low-risk because macOS restarts them when needed, but you may notice small side effects like the input switcher needing a retry if a component was restarted at the wrong moment.
+- If you can reproduce the issue reliably, also consider mitigations people reported: disabling certain suggestion/association features or removing problematic custom phrases/input sources can reduce stalls for some setups.
 
 ### Main References
 * https://little-feyfey.medium.com/%E8%A7%A3%E6%B1%BAmac-macbook-%E9%80%B1%E6%9C%9F%E6%80%A7%E5%8D%A1%E9%A0%93%E7%9A%84%E5%95%8F%E9%A1%8C-cause-by-input-method-a215f3b36409
